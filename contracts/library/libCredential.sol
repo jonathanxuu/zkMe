@@ -1,68 +1,50 @@
 // SPDX-License-Identifier: GPL-3.0
-
 pragma solidity ^0.8.9;
 
-// This contract is meant to verify VC, it will recombine the key elements to restore digest, and check whether the VC has been attested.
-
-/**
- * @title CredDigestVerify
- * @dev used to verify VC. The VC's key components needs to be passed in, the contract will do the verification job.
- */
-contract CredDigestVerify {
-    // the version header of the eip191
-    bytes25 constant EIP191_VERSION_E_HEADER = "Ethereum Signed Message:\n";
-
+// this library defines the struct and the functions of a Verifiable Credential
+library libCredential {
     // the prefix of did, which is 'did::zk'
     bytes7 constant DID_ZK_PREFIX = bytes7("did:zk:");
+
+    // the version header of the eip191
+    bytes25 constant EIP191_VERSION_E_HEADER = "Ethereum Signed Message:\n";
 
     // the prefix of the attestation message, which is CredentialVersionedDigest
     bytes25 constant EIP191_CRE_VERSION_DIGEST_PREFIX = bytes25("CredentialVersionedDigest");
 
-    // the length of Digest, which likes 0xb32b6e54e4420cfaf2feecdc0a15dc3fc0a7681687123a0f8cb348b451c2989
+    // the length of Digest, which likes 0x1b32b6e54e4420cfaf2feecdc0a15dc3fc0a7681687123a0f8cb348b451c2989
     bytes2 constant EIP191_CRE_DIGEST_LEN_V0 = 0x3332;
 
     // the length of the CredentialVersionedDigest, which likes CredentialVersionedDigest0x00011b32b6e54e4420cfaf2feecdc0a15dc3fc0a7681687123a0f8cb348b451c2989
     bytes2 constant EIP191_CRE_VERSION_DIGEST_LEN_V1 = 0x3539;
 
-    // represent the user's ethereum address who owns the VC (VC digesthash => ethereumAddress)
-    mapping(bytes32 => address) public VCHolder;
+    struct SignatureDetail {
+        bool isEip191;
+        bytes signature;
+    }
 
-    // represent the user's ethereum address who attests the VC (VC digesthash => ethereumAddress)
-    mapping(bytes32 => address) public VCAttester;
-
-    // emit a vcVerifyFail event
-    event vcVerifyFail(
-        address indexed sender,
-        bytes32 indexed digest,
-        bytes2 vcVersion
-    );
-
-    // emit a vcVerifySuccess event
-    event vcVerifySuccess(
-        address indexed sender,
-        bytes32 indexed digest,
-        bytes2 vcVersion
-    );
+    struct Credential {
+        bytes2 version;
+        bytes32 ctype;
+        bytes32 digest;
+        bytes32 roothash;
+        address claimer;
+        address attester;
+        uint64 issuanceDate;
+        uint64 expirationDate;
+        SignatureDetail sigDetail;
+    }
 
     /**
-     * @dev calculate the digestHash
-     * @param userAddress, the user address
-     * @param ctype, the ctype of the VC
-     * @param issuanceDate, the timestamp of the issuanceDate
-     * @param expirationDate, the timestamp of the expirationDate.
-     * @param roothash, the roothash of the VC
+     * @dev verify the digest of the Credential
+     * @param credential, the credential to be verified
      */
-    function _calcDigest(
-        bytes32 roothash,
-        address userAddress,
-        bytes memory issuanceDate,
-        bytes memory expirationDate,
-        bytes32 ctype,
-        bytes2 vcVersion
-    ) internal pure returns (bytes32 digest) {
+    function verifyDigest(
+        Credential memory credential
+    ) public pure returns (bool verifyResult) {
         // if the vcVersion is not valid, revert
         require(
-            vcVersion == 0x0001 || vcVersion == 0x0000,
+            credential.version == 0x0001 || credential.version == 0x0000,
             "The vcVersion is invalid"
         );
 
@@ -72,103 +54,48 @@ contract CredDigestVerify {
         // concat and compute digest according to the vcVersion(different concat rule)
         bytes memory concatResult;
 
-        if (vcVersion == 0x0001) {
-            userDidAsBytes = abi.encodePacked(userAddress);
+        if (credential.version == 0x0001) {
+            userDidAsBytes = abi.encodePacked(credential.claimer);
             concatResult = abi.encodePacked(
-                roothash,
+                credential.roothash,
                 DID_ZK_PREFIX,
                 userDidAsBytes,
-                issuanceDate,
-                expirationDate,
-                ctype
+                _uint64ToBytes(credential.issuanceDate),
+                _uint64ToBytes(credential.expirationDate),
+                credential.ctype
             );
-        } else if (vcVersion == 0x0000) {
-            userDidAsBytes = abi.encodePacked("0x", _getChecksum(userAddress));
+        } else if (credential.version == 0x0000) {
+            userDidAsBytes = abi.encodePacked(
+                "0x",
+                _getChecksum(credential.claimer)
+            );
             concatResult = abi.encodePacked(
-                roothash,
+                credential.roothash,
                 DID_ZK_PREFIX,
                 userDidAsBytes,
-                expirationDate,
-                ctype
+                _uint64ToBytes(credential.expirationDate),
+                credential.ctype
             );
         }
-        digest = keccak256(concatResult);
-    }
-
-    /**
-     * @dev calculate the digestHash, and verify the attestation signature. If the verification phase is passed, the verification result can be checked via the 'VCHolder' interface.
-     * @param roothash, the roothash of the VC
-     * @param issuanceDate, the timestamp of the issuanceDate
-     * @param expirationDate, the timestamp of the expirationDate
-     * @param ctype, the ctype of the VC
-     * @param vcVersion, the version of the VC
-     * @param isEip191, whether the signature used eip191 proposal
-     * @param signature, the attestation signature of the VC, which is in the format of 'base58'
-     * @param attester, the attester of the VC
-     */
-    function verifyVC(
-        bytes32 ctype,
-        bytes memory issuanceDate,
-        bytes memory expirationDate,
-        bytes32 roothash,
-        bytes2 vcVersion,
-        bool isEip191,
-        bytes memory signature,
-        address attester
-    ) public {
-        bytes32 digest = _calcDigest(
-            roothash,
-            msg.sender,
-            issuanceDate,
-            expirationDate,
-            ctype,
-            vcVersion
-        );
-
-        bool verificationResult = _verifyDigestSignature(
-            digest,
-            vcVersion,
-            isEip191,
-            signature,
-            attester
-        );
-
-        if (verificationResult == true) {
-            require(
-                VCHolder[digest] == address(0) && VCAttester[digest] == address(0),
-                "This VC has been upload before"
-            );
-            VCAttester[digest] = attester;
-            VCHolder[digest] = msg.sender;
-            emit vcVerifySuccess(msg.sender, digest, vcVersion);
-        } else {
-            emit vcVerifyFail(msg.sender, digest, vcVersion);
-        }
+        bytes32 digest = keccak256(concatResult);
+        return digest == credential.digest;
     }
 
     /**
      * @dev verify the signature, check if it is a valid proof of the digest, check whether the attester signed this digest
-     * @param digest, the digestHash of the VC
-     * @param vcVersion, the version of the VC
-     * @param isEip191, whether the signature used eip191 proposal
-     * @param signature, the attestation signature of the VC
-     * @param attester, the attester of the VC
+     * @param credential, the credential to be verified
      */
-    function _verifyDigestSignature(
-        bytes32 digest,
-        bytes2 vcVersion,
-        bool isEip191,
-        bytes memory signature,
-        address attester
-    ) internal pure returns (bool) {
+    function verifySignature(
+        Credential memory credential
+    ) public pure returns (bool) {
         bytes32 ethSignedMessageHash;
-        if (isEip191 == false) {
-            ethSignedMessageHash = digest;
+        if (credential.sigDetail.isEip191 == false) {
+            ethSignedMessageHash = credential.digest;
         } else {
-            if (vcVersion == 0x0001) {
+            if (credential.version == 0x0001) {
                 bytes memory versionedDigest = abi.encodePacked(
-                    vcVersion,
-                    digest
+                    credential.version,
+                    credential.digest
                 );
                 ethSignedMessageHash = keccak256(
                     abi.encodePacked(
@@ -185,12 +112,14 @@ contract CredDigestVerify {
                         bytes1(0x19),
                         EIP191_VERSION_E_HEADER,
                         EIP191_CRE_DIGEST_LEN_V0,
-                        digest
+                        credential.digest
                     )
                 );
             }
         }
-        return recover(ethSignedMessageHash, signature) == attester;
+        return
+            _recover(ethSignedMessageHash, credential.sigDetail.signature) ==
+            credential.attester;
     }
 
     /**
@@ -198,7 +127,7 @@ contract CredDigestVerify {
      * @param hash, the messageHash which the signer signed
      * @param sig, the signature
      */
-    function recover(
+    function _recover(
         bytes32 hash,
         bytes memory sig
     ) internal pure returns (address) {
@@ -233,6 +162,24 @@ contract CredDigestVerify {
             // solium-disable-next-line arg-overflow
             return ecrecover(hash, v, r, s);
         }
+    }
+
+    /**
+     * @dev convert uint64 to bytes(with unfixed length), designed for timestamp when calculate
+     * @param num, the uint64 to be convert
+     */
+    function _uint64ToBytes(uint64 num) public pure returns (bytes memory) {
+        uint len = 0;
+
+        for (uint tmpNum = num; tmpNum > 0; tmpNum >>= 8) {
+            len++;
+        }
+        bytes memory result = new bytes(len);
+        for (uint i = 0; i < len; i++) {
+            result[len - i - 1] = bytes1(uint8(num & 0xff));
+            num >>= 8;
+        }
+        return result;
     }
 
     /**
