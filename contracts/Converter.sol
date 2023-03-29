@@ -178,7 +178,7 @@ contract Converter {
      *
      * @return Returns the check result
      */
-    function isAttestationValid(bytes32 digest) public view returns (bool) {
+    function validityCheck(bytes32 digest) public view returns (bool) {
         address attester = _db[digest].attester;
         if (
             _db[digest].digest == bytes32(0) || _revokeDB[digest][attester] != 0
