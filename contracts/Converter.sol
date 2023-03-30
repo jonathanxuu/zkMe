@@ -5,17 +5,22 @@ pragma solidity ^0.8.9;
 import {libCredential} from "./library/libCredential.sol";
 import {libAttestation} from "./library/libAttestation.sol";
 import {libRevocation} from "./library/libRevocation.sol";
+import {ICTypeRegistry, CTypeRecord} from "./ICTypeRegistry.sol";
+import {IConverter} from "./IConverter.sol";
 
 /**
  * @title Converter
  * @dev used to convert Credential to Attestation on-chain. The contract will do the verification job.
  */
-contract Converter {
+contract Converter is IConverter {
     // checking the attestation details via its digest
     mapping(bytes32 => libAttestation.Attestation) private _db;
 
     // store the timestamp of the revocation
     mapping(bytes32 => mapping(address => uint64)) private _revokeDB;
+
+    // The global schema registry.
+    ICTypeRegistry private immutable _ctypeRegistry;
 
     // todo: list all error scenairos
     error DigestInvalid();
@@ -24,108 +29,84 @@ contract Converter {
     error AttestationNotExist();
     error AlreadyRevoked();
     error RevokeWithInvalidSig();
-
-    // todo：list all event
-    event ConvertSuccess(address indexed converter, bytes32 indexed digest);
-    event Revoke(address indexed revoker, bytes32 indexed digest);
-    event RevokeWithSig(
-        address indexed revoker,
-        bytes32 indexed digest,
-        address indexed attester
-    );
+    error InvalidRegistry();
+    error CTypeNotExist();
 
     /**
-     * @dev convert the Credential to attestation on-chain
-     * @param credential, the credential to be converted
+     * @dev The constructor function of the Converter Contract.
      *
-     * @return Returns the digest of the attestation
+     * @param registry The address of the global ctype registry.
      */
-    function convertToAttestation(
-        libCredential.Credential memory credential
-    ) public returns (bytes32) {
-        if (libCredential.verifyDigest(credential) == false) {
-            revert DigestInvalid();
+    constructor(ICTypeRegistry registry) {
+        if (address(registry) == address(0)) {
+            revert InvalidRegistry();
         }
 
-        if (libCredential.verifySignature(credential) == false) {
-            revert SignatureInvalid();
-        }
-
-        if (_db[credential.digest].digest != bytes32(0)) {
-            revert AttestationAlreadyExist();
-        }
-
-        if (_revokeDB[credential.digest][credential.attester] != 0) {
-            revert AlreadyRevoked();
-        }
-
-        libAttestation.Attestation memory attestation = libAttestation
-            .fillAttestation(credential, msg.sender);
-        _db[attestation.digest] = attestation;
-
-        emit ConvertSuccess(msg.sender, attestation.digest);
-        return attestation.digest;
+        _ctypeRegistry = registry;
     }
 
     /**
-     * @dev convert the Credential to attestation on-chain in batch
-     * @param credentialList, the credentials to be converted
-     *
-     * @return digest, Returns the digest of the attestation
+     * @inheritdoc IConverter
+     */
+    function getSchemaRegistry() external view returns (ICTypeRegistry) {
+        return _ctypeRegistry;
+    }
+
+    /**
+     * @inheritdoc IConverter
+     */
+    function convertToAttestation(
+        libCredential.Credential memory credential
+    ) external returns (bytes32) {
+        return _convertToAttestation(credential, msg.sender);
+    }
+
+    /**
+     * @inheritdoc IConverter
      */
     function multiConvertToAttestation(
         libCredential.Credential[] memory credentialList
-    ) public returns (bytes32[] memory) {
+    ) external returns (bytes32[] memory) {
         bytes32[] memory digest = new bytes32[](credentialList.length);
 
         for (uint256 i = 0; i < credentialList.length; ) {
             libCredential.Credential memory currentCredential = credentialList[
                 i
             ];
-            bytes32 currentDigest = convertToAttestation(currentCredential);
+            bytes32 currentDigest = _convertToAttestation(
+                currentCredential,
+                msg.sender
+            );
             digest[i] = currentDigest;
         }
         return digest;
     }
 
     /**
-     * @dev revoke certain attestation. Designed for the attester themselves.
-     * @param digest, the digest of the attestation to be revoked
-     *
-     * @return Returns the timestamp of the revocation.
+     * @inheritdoc IConverter
      */
-    function revoke(bytes32 digest) public returns (uint64) {
-        if (_revokeDB[digest][msg.sender] != 0) {
-            revert AlreadyRevoked();
-        }
-        _revokeDB[digest][msg.sender] = _time();
-        emit Revoke(msg.sender, digest);
-        return _revokeDB[digest][msg.sender];
+    function revoke(bytes32 digest) external returns (uint64) {
+        return _revoke(digest, msg.sender);
     }
 
     /**
-     * @dev revoke attestations in batch. Designed for the attester themselves.
-     * @param digestList, the digest of the attestations to be revoked
-     *
-     * @return Returns the timestamp of the revocation.
+     * @inheritdoc IConverter
      */
-    function multiRevoke(bytes32[] memory digestList) public returns (uint64) {
+    function multiRevoke(
+        bytes32[] memory digestList
+    ) external returns (uint64) {
         for (uint256 i = 0; i < digestList.length; ) {
-            revoke(digestList[i]);
+            _revoke(digestList[i], msg.sender);
         }
         return _time();
     }
 
     /**
-     * @dev revoke attestation with attester's signature. The signature must match the digest to be revoked.
-     * @param revocationWithSigList, the digest, signature, attester of the attestation to be revoked
-     * 
-     * @return Returns the timestamp of the revocation.
-
+     * @inheritdoc IConverter
      */
     function revokeWithSig(
         libRevocation.RevocationWithSig[] memory revocationWithSigList
-    ) public returns (uint64) {
+    ) external returns (uint64) {
         for (uint256 i = 0; i < revocationWithSigList.length; ) {
             libRevocation.RevocationWithSig
                 memory currentRevocation = revocationWithSigList[i];
@@ -140,15 +121,11 @@ contract Converter {
     }
 
     /**
-     * @dev revoke attestation with attester's signature. The signature must match the digest to be revoked.
-     * @param multiRevocationWithSigList, the digest, signature, attester of the attestation to be revoked
-     * 
-     * @return Returns the timestamp of the revocation.
-
+     * @inheritdoc IConverter
      */
     function multiRevokeWithSig(
         libRevocation.MultiRevocationWithSig[] memory multiRevocationWithSigList
-    ) public returns (uint64) {
+    ) external returns (uint64) {
         for (uint256 i = 0; i < multiRevocationWithSigList.length; ) {
             libRevocation.MultiRevocationWithSig
                 memory currentRevocation = multiRevocationWithSigList[i];
@@ -173,12 +150,9 @@ contract Converter {
     }
 
     /**
-     * @dev check whether the attestation is valid and hasn't been revoked yet.
-     * @param digest, the digest of the attestation to be checked
-     *
-     * @return Returns the check result
+     * @inheritdoc IConverter
      */
-    function validityCheck(bytes32 digest) public view returns (bool) {
+    function validityCheck(bytes32 digest) external view returns (bool) {
         address attester = _db[digest].attester;
         if (
             _db[digest].digest == bytes32(0) || _revokeDB[digest][attester] != 0
@@ -189,15 +163,72 @@ contract Converter {
     }
 
     /**
-     * @dev fetch the attestation on-chain, no matter whether the attestation is revoked
-     * @param digest, the digest of the attestation to be checked
-     *
-     * @return Returns the attestation stored on-chain
+     * @inheritdoc IConverter
      */
     function getAttestation(
         bytes32 digest
-    ) public view returns (libAttestation.Attestation memory) {
+    ) external view returns (libAttestation.Attestation memory) {
         return _db[digest];
+    }
+
+    /**
+     * @dev convert the Credential to attestation on-chain
+     * @param credential, the credential to be converted
+     * @param converter, ther converter address of the attestation
+     *
+     * @return Returns the digest of the attestation
+     */
+    function _convertToAttestation(
+        libCredential.Credential memory credential,
+        address converter
+    ) internal returns (bytes32) {
+        if (libCredential.verifyDigest(credential) == false) {
+            revert DigestInvalid();
+        }
+
+        if (libCredential.verifySignature(credential) == false) {
+            revert SignatureInvalid();
+        }
+
+        if (_db[credential.digest].digest != bytes32(0)) {
+            revert AttestationAlreadyExist();
+        }
+
+        if (_revokeDB[credential.digest][credential.attester] != 0) {
+            revert AlreadyRevoked();
+        }
+
+        CTypeRecord memory ctypeRecord = _ctypeRegistry.getCType(credential.ctype, credential.attester);
+
+        if (ctypeRecord.fieldData.length == 0){
+            revert CTypeNotExist();
+        }
+
+        libAttestation.Attestation memory attestation = libAttestation
+            .fillAttestation(credential, converter);
+        _db[attestation.digest] = attestation;
+
+        emit ConvertSuccess(converter, attestation.digest);
+        return attestation.digest;
+    }
+
+    /**
+     * @dev revoke certain attestation. Designed for the attester themselves.
+     * @param digest, the digest of the attestation to be revoked
+     * @param revoker, the revoker address of the attestation
+     *
+     * @return Returns the timestamp of the revocation.
+     */
+    function _revoke(
+        bytes32 digest,
+        address revoker
+    ) internal returns (uint64) {
+        if (_revokeDB[digest][revoker] != 0) {
+            revert AlreadyRevoked();
+        }
+        _revokeDB[digest][revoker] = _time();
+        emit Revoke(revoker, digest);
+        return _revokeDB[digest][revoker];
     }
 
     /**

@@ -14,6 +14,8 @@ library libAttestation {
         bytes2 version;
         bytes32 ctype;
         bytes32 digest;
+        string[] data;
+        // bytes[] data;
         address claimer;
         address attester;
         uint64 issuanceDate;
@@ -37,6 +39,7 @@ library libAttestation {
         attestation.version = credential.version;
         attestation.ctype = credential.ctype;
         attestation.digest = credential.digest;
+        attestation.data = credential.data;
         attestation.claimer = credential.claimer;
         attestation.attester = credential.attester;
         attestation.issuanceDate = credential.issuanceDate;

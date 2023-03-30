@@ -5,7 +5,6 @@ pragma solidity ^0.8.9;
 enum FieldType {
     BOOL,
     STRING,
-    BYTES,
     UINT,
     UINT8,
     UINT16,

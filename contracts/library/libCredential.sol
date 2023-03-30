@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.9;
 
+import { CTypeRecord, FieldType } from "../ICTypeRegistry.sol";
+
 // this library defines the struct and the functions of a Verifiable Credential
 library libCredential {
     // the prefix of did, which is 'did::zk'
@@ -28,11 +30,75 @@ library libCredential {
         bytes32 ctype;
         bytes32 digest;
         bytes32 roothash;
+        string[] data;
+        // bytes[] data; // if use bytes, we dont't need to convert each field content to its dataType
         address claimer;
         address attester;
         uint64 issuanceDate;
         uint64 expirationDate;
         SignatureDetail sigDetail;
+    }
+
+
+    /**
+     * @dev verify the roothash of the Credential
+     * @param credential, the credential to be verified
+     * @param ctypeRecord, the ctype needs to match
+     */
+    function verifyRootHash(Credential memory credential, CTypeRecord memory ctypeRecord) public pure returns (bool verifyResult){
+        // the data is empty, means that the content of the VC won't be stored on-chain
+        if (credential.data.length == 0){
+            return true;
+        }
+
+        FieldType[] memory fieldType = ctypeRecord.fieldType;
+        if (credential.data.length != fieldType.length){
+            return false;
+        }
+
+        if (credential.roothash != _calcRoothash(credential.data, fieldType)){
+            return false;
+        }
+        
+        return true;
+    }
+
+
+    /**
+     * @dev calculate the roothash of the Credential
+     * @param data, the data to be calculated
+     * @param fieldType, the ctype needs to match
+     */
+    // todo: whether save this or drop?
+    function _calcRoothash(string[] memory data, FieldType[] memory fieldType) internal pure returns (bytes32 roothash){
+        bytes32[] memory leaves = new bytes32[](fieldType.length);
+        for (uint i = 0; i < fieldType.length; i++){
+            if (fieldType[i] == FieldType.BOOL && (keccak256(abi.encodePacked(data[i])) == keccak256(abi.encodePacked("true")) || keccak256(abi.encodePacked(data[i])) == keccak256(abi.encodePacked("false")) ))
+                {
+                leaves[i] = keccak256(abi.encodePacked(keccak256(abi.encodePacked(data[i])) == keccak256(abi.encodePacked("true"))));
+            }
+
+            if (fieldType[i] == FieldType.STRING){
+                leaves[i] = keccak256(abi.encodePacked(data[i]));
+            }
+
+            // todo, add range limit
+            if (fieldType[i] == FieldType.UINT || fieldType[i] == FieldType.UINT8 || fieldType[i] == FieldType.UINT16 ||fieldType[i] == FieldType.UINT32||fieldType[i] == FieldType.UINT64||fieldType[i] == FieldType.UINT128||fieldType[i] == FieldType.UINT256){
+                uint256 convertedNumber;
+                bool isConvertSuccess;
+                (convertedNumber, isConvertSuccess) = _strToUint(data[i]);
+                leaves[i] = keccak256(abi.encodePacked(_toBytes(convertedNumber)));
+            }
+
+            // todo, add range limit
+            if (fieldType[i] == FieldType.INT || fieldType[i] == FieldType.INT8 || fieldType[i] == FieldType.INT16 ||fieldType[i] == FieldType.INT32||fieldType[i] == FieldType.INT64||fieldType[i] == FieldType.INT128||fieldType[i] == FieldType.INT256){
+                int convertedNumber;
+                convertedNumber = _stringToInteger(data[i]);
+                leaves[i] = keccak256(abi.encodePacked(convertedNumber));
+            }
+        }
+        roothash = _computeRootHash(leaves);
+
     }
 
     /**
@@ -165,10 +231,80 @@ library libCredential {
     }
 
     /**
+     * @dev convert string to uint
+     * @param _str, the string to be convert
+     */
+    function _strToUint(string memory _str) internal pure returns(uint256 res, bool err) {
+        
+        for (uint256 i = 0; i < bytes(_str).length; i++) {
+            if ((uint8(bytes(_str)[i]) - 48) < 0 || (uint8(bytes(_str)[i]) - 48) > 9) {
+                return (0, false);
+            }
+            res += (uint8(bytes(_str)[i]) - 48) * 10**(bytes(_str).length - i - 1);
+        }
+        
+        return (res, true);
+    }
+
+    /**
+     * @dev convert string to int
+     * @param _value, the string to be convert
+     */
+    function _stringToInteger(string memory _value) internal pure returns (int) {
+        bytes memory _bytesValue = bytes(_value);
+        int256 _intValue = 0;
+        bool _isNegative = false;
+
+        for (uint256 i = 0; i < _bytesValue.length; i++) {
+            uint256 _digit = uint256(uint8(_bytesValue[i]));
+
+            if (_digit >= 48 && _digit <= 57) {
+                _intValue = _intValue * 10 + int256(_digit - 48);
+            } else if (_digit == 45 && i == 0) {
+                _isNegative = true;
+            } else {
+                revert("Invalid integer value");
+            }
+        }
+
+        if (_isNegative) {
+            _intValue = -_intValue;
+        }
+
+        return _intValue;
+    }
+
+
+    /**
+     * @dev computeRoothash
+     * @param leaves, the leaves to be computed
+     */
+    function _computeRootHash(bytes32[] memory leaves) internal pure returns (bytes32) {
+        require(leaves.length > 0, "Leaves array should not be empty");
+
+        uint256 n = leaves.length;
+        bytes32[] memory nodes = new bytes32[](n * 2); 
+
+        for (uint256 i = 0; i < n; i++) {
+            nodes[n + i] = leaves[i];
+        }
+
+        for (uint256 i = n - 1; i > 0; i--) {
+            nodes[i] = keccak256(abi.encodePacked(nodes[i * 2], nodes[i * 2 + 1]));
+        }
+
+        return nodes[1]; 
+    }
+
+    /**
      * @dev convert uint64 to bytes(with unfixed length), designed for timestamp when calculate
      * @param num, the uint64 to be convert
      */
     function _uint64ToBytes(uint64 num) public pure returns (bytes memory) {
+        if (num == 0){
+            bytes memory res = new bytes(1);
+            return res;
+        }
         uint len = 0;
 
         for (uint tmpNum = num; tmpNum > 0; tmpNum >>= 8) {
@@ -180,6 +316,12 @@ library libCredential {
             num >>= 8;
         }
         return result;
+    }
+
+    function _toBytes(uint256 x) internal pure returns (bytes memory) {
+        bytes memory b = new bytes(32);
+        assembly { mstore(add(b, 32), x) }
+        return b;
     }
 
     /**

@@ -10,6 +10,9 @@ async function main() {
   const libAttestation = await ethers.getContractFactory("libAttestation",{libraries:{libCredential : libCredentialObj.address}});
   const libAttestationObj = await libAttestation.deploy();
 
+  const ctypeRegistry = await ethers.getContractFactory("CTypeRegistry");
+  const ctypeRegistryObj = await ctypeRegistry.deploy();
+
   const Converter = await ethers.getContractFactory("Converter",{
     libraries:{
       libCredential: libCredentialObj.address,
