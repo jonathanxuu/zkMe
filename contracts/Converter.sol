@@ -12,6 +12,7 @@ import {IConverter} from "./IConverter.sol";
  * @title Converter
  * @dev used to convert Credential to Attestation on-chain. The contract will do the verification job.
  */
+
 contract Converter is IConverter {
     // checking the attestation details via its digest
     mapping(bytes32 => libAttestation.Attestation) private _db;
@@ -24,6 +25,7 @@ contract Converter is IConverter {
 
     // todo: list all error scenairos
     error DigestInvalid();
+    error RoothashInvalid();
     error SignatureInvalid();
     error AttestationAlreadyExist();
     error AttestationNotExist();
@@ -58,7 +60,7 @@ contract Converter is IConverter {
     function convertToAttestation(
         libCredential.Credential memory credential
     ) external returns (bytes32) {
-        return _convertToAttestation(credential, msg.sender);
+        return _convertToAttestation(credential);
     }
 
     /**
@@ -73,10 +75,7 @@ contract Converter is IConverter {
             libCredential.Credential memory currentCredential = credentialList[
                 i
             ];
-            bytes32 currentDigest = _convertToAttestation(
-                currentCredential,
-                msg.sender
-            );
+            bytes32 currentDigest = _convertToAttestation(currentCredential);
             digest[i] = currentDigest;
         }
         return digest;
@@ -174,13 +173,11 @@ contract Converter is IConverter {
     /**
      * @dev convert the Credential to attestation on-chain
      * @param credential, the credential to be converted
-     * @param converter, ther converter address of the attestation
      *
      * @return Returns the digest of the attestation
      */
     function _convertToAttestation(
-        libCredential.Credential memory credential,
-        address converter
+        libCredential.Credential memory credential
     ) internal returns (bytes32) {
         if (libCredential.verifyDigest(credential) == false) {
             revert DigestInvalid();
@@ -198,17 +195,24 @@ contract Converter is IConverter {
             revert AlreadyRevoked();
         }
 
-        CTypeRecord memory ctypeRecord = _ctypeRegistry.getCType(credential.ctype, credential.attester);
+        CTypeRecord memory ctypeRecord = _ctypeRegistry.getCType(
+            credential.ctype,
+            credential.attester
+        );
 
-        if (ctypeRecord.fieldData.length == 0){
+        if (ctypeRecord.fieldData.length == 0) {
             revert CTypeNotExist();
         }
 
+        if (libCredential.verifyRootHash(credential, ctypeRecord) == false) {
+            revert RoothashInvalid();
+        }
+
         libAttestation.Attestation memory attestation = libAttestation
-            .fillAttestation(credential, converter);
+            .fillAttestation(credential);
         _db[attestation.digest] = attestation;
 
-        emit ConvertSuccess(converter, attestation.digest);
+        emit ConvertSuccess(attestation.digest);
         return attestation.digest;
     }
 

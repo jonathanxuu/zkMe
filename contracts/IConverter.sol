@@ -5,7 +5,6 @@ import {libCredential} from "./library/libCredential.sol";
 import {libAttestation} from "./library/libAttestation.sol";
 import {libRevocation} from "./library/libRevocation.sol";
 import {ICTypeRegistry} from "./ICTypeRegistry.sol";
-import {ICTypeRegistry} from "./ICTypeRegistry.sol";
 
 /**
  * @title Converter - The contract used to convert a valid Credential to Attestation on-chain.
@@ -14,10 +13,9 @@ interface IConverter {
     /**
      * @dev Emitted when an attestation has been converted.
      *
-     * @param converter The address of the converter.
      * @param digest The digest of the attestation.
      */
-    event ConvertSuccess(address indexed converter, bytes32 indexed digest);
+    event ConvertSuccess(bytes32 indexed digest);
 
     /**
      * @dev Emitted when an attestation has been revoked.
@@ -75,7 +73,7 @@ interface IConverter {
      */
     function revoke(bytes32 digest) external returns (uint64);
 
-     /**
+    /**
      * @dev revoke attestations in batch. Designed for the attester themselves.
      * @param digestList, the digest of the attestations to be revoked
      *

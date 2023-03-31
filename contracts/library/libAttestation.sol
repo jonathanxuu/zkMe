@@ -5,22 +5,16 @@ import {libCredential} from "./libCredential.sol";
 
 // this library defines the struct and the functions of an attestation
 library libAttestation {
-    struct ConverterDetail {
-        uint64 convertDate;
-        address converter;
-    }
-
     struct Attestation {
         bytes2 version;
         bytes32 ctype;
         bytes32 digest;
-        string[] data;
-        // bytes[] data;
+        // string[] data;
+        bytes[] data;
         address claimer;
         address attester;
         uint64 issuanceDate;
         uint64 expirationDate;
-        ConverterDetail converterDetail;
     }
 
     /**
@@ -28,14 +22,8 @@ library libAttestation {
      * @param credential, the credential to be verified
      */
     function fillAttestation(
-        libCredential.Credential memory credential,
-        address converter
-    ) public view returns (Attestation memory attestation) {
-        ConverterDetail memory converterDetail = ConverterDetail(
-            _time(),
-            converter
-        );
-
+        libCredential.Credential memory credential
+    ) public pure returns (Attestation memory attestation) {
         attestation.version = credential.version;
         attestation.ctype = credential.ctype;
         attestation.digest = credential.digest;
@@ -44,8 +32,6 @@ library libAttestation {
         attestation.attester = credential.attester;
         attestation.issuanceDate = credential.issuanceDate;
         attestation.expirationDate = credential.expirationDate;
-        attestation.converterDetail = converterDetail;
-
         return attestation;
     }
 

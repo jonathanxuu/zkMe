@@ -7,21 +7,21 @@ async function main() {
   const libRevocation = await ethers.getContractFactory("libRevocation");
   const libRevocationObj = await libRevocation.deploy();
 
-  const libAttestation = await ethers.getContractFactory("libAttestation",{libraries:{libCredential : libCredentialObj.address}});
+  const libAttestation = await ethers.getContractFactory("libAttestation", { libraries: { libCredential: libCredentialObj.address } });
   const libAttestationObj = await libAttestation.deploy();
 
   const ctypeRegistry = await ethers.getContractFactory("CTypeRegistry");
   const ctypeRegistryObj = await ctypeRegistry.deploy();
 
-  const Converter = await ethers.getContractFactory("Converter",{
-    libraries:{
+  const Converter = await ethers.getContractFactory("Converter", {
+    libraries: {
       libCredential: libCredentialObj.address,
       libAttestation: libAttestationObj.address,
       libRevocation: libRevocationObj.address,
     }
   }
-  
-  
+
+
   );
   const converter = await Converter.deploy();
 }

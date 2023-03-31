@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.9;
 
-import { CTypeRecord, FieldType } from "../ICTypeRegistry.sol";
+import {CTypeRecord, FieldType} from "../ICTypeRegistry.sol";
 
 // this library defines the struct and the functions of a Verifiable Credential
 library libCredential {
@@ -12,7 +12,8 @@ library libCredential {
     bytes25 constant EIP191_VERSION_E_HEADER = "Ethereum Signed Message:\n";
 
     // the prefix of the attestation message, which is CredentialVersionedDigest
-    bytes25 constant EIP191_CRE_VERSION_DIGEST_PREFIX = bytes25("CredentialVersionedDigest");
+    bytes25 constant EIP191_CRE_VERSION_DIGEST_PREFIX =
+        bytes25("CredentialVersionedDigest");
 
     // the length of Digest, which likes 0x1b32b6e54e4420cfaf2feecdc0a15dc3fc0a7681687123a0f8cb348b451c2989
     bytes2 constant EIP191_CRE_DIGEST_LEN_V0 = 0x3332;
@@ -20,86 +21,132 @@ library libCredential {
     // the length of the CredentialVersionedDigest, which likes CredentialVersionedDigest0x00011b32b6e54e4420cfaf2feecdc0a15dc3fc0a7681687123a0f8cb348b451c2989
     bytes2 constant EIP191_CRE_VERSION_DIGEST_LEN_V1 = 0x3539;
 
-    struct SignatureDetail {
-        bool isEip191;
-        bytes signature;
-    }
-
     struct Credential {
         bytes2 version;
         bytes32 ctype;
         bytes32 digest;
         bytes32 roothash;
-        string[] data;
-        // bytes[] data; // if use bytes, we dont't need to convert each field content to its dataType
+        // string[] data;
+        bytes[] data; // if use bytes, we dont't need to convert each field content to its dataType
         address claimer;
         address attester;
         uint64 issuanceDate;
         uint64 expirationDate;
-        SignatureDetail sigDetail;
+        bytes signature; // the signature is EIP191 by default
     }
-
 
     /**
      * @dev verify the roothash of the Credential
      * @param credential, the credential to be verified
      * @param ctypeRecord, the ctype needs to match
      */
-    function verifyRootHash(Credential memory credential, CTypeRecord memory ctypeRecord) public pure returns (bool verifyResult){
+    function verifyRootHash(
+        Credential memory credential,
+        CTypeRecord memory ctypeRecord
+    ) public pure returns (bool verifyResult) {
         // the data is empty, means that the content of the VC won't be stored on-chain
-        if (credential.data.length == 0){
+        if (credential.data.length == 0) {
             return true;
         }
 
         FieldType[] memory fieldType = ctypeRecord.fieldType;
-        if (credential.data.length != fieldType.length){
+        if (credential.data.length != fieldType.length) {
             return false;
         }
 
-        if (credential.roothash != _calcRoothash(credential.data, fieldType)){
+        if (credential.roothash != _calcRoothash(credential.data)) {
+            // if (credential.roothash != _calcRoothash(credential.data, fieldType)) {
+
             return false;
         }
-        
+
         return true;
     }
-
 
     /**
      * @dev calculate the roothash of the Credential
      * @param data, the data to be calculated
-     * @param fieldType, the ctype needs to match
      */
     // todo: whether save this or drop?
-    function _calcRoothash(string[] memory data, FieldType[] memory fieldType) internal pure returns (bytes32 roothash){
-        bytes32[] memory leaves = new bytes32[](fieldType.length);
-        for (uint i = 0; i < fieldType.length; i++){
-            if (fieldType[i] == FieldType.BOOL && (keccak256(abi.encodePacked(data[i])) == keccak256(abi.encodePacked("true")) || keccak256(abi.encodePacked(data[i])) == keccak256(abi.encodePacked("false")) ))
-                {
-                leaves[i] = keccak256(abi.encodePacked(keccak256(abi.encodePacked(data[i])) == keccak256(abi.encodePacked("true"))));
-            }
-
-            if (fieldType[i] == FieldType.STRING){
-                leaves[i] = keccak256(abi.encodePacked(data[i]));
-            }
-
-            // todo, add range limit
-            if (fieldType[i] == FieldType.UINT || fieldType[i] == FieldType.UINT8 || fieldType[i] == FieldType.UINT16 ||fieldType[i] == FieldType.UINT32||fieldType[i] == FieldType.UINT64||fieldType[i] == FieldType.UINT128||fieldType[i] == FieldType.UINT256){
-                uint256 convertedNumber;
-                bool isConvertSuccess;
-                (convertedNumber, isConvertSuccess) = _strToUint(data[i]);
-                leaves[i] = keccak256(abi.encodePacked(_toBytes(convertedNumber)));
-            }
-
-            // todo, add range limit
-            if (fieldType[i] == FieldType.INT || fieldType[i] == FieldType.INT8 || fieldType[i] == FieldType.INT16 ||fieldType[i] == FieldType.INT32||fieldType[i] == FieldType.INT64||fieldType[i] == FieldType.INT128||fieldType[i] == FieldType.INT256){
-                int convertedNumber;
-                convertedNumber = _stringToInteger(data[i]);
-                leaves[i] = keccak256(abi.encodePacked(convertedNumber));
-            }
+    function _calcRoothash(
+        bytes[] memory data
+    ) internal pure returns (bytes32 roothash) {
+        bytes32[] memory leaves = new bytes32[](data.length);
+        for (uint i = 0; i < data.length; i++) {
+            bytes32 res = keccak256(abi.encodePacked(data[i]));
+            leaves[i] = keccak256(abi.encodePacked(res));
         }
         roothash = _computeRootHash(leaves);
-
     }
+
+    // function _calcRoothash(
+    //     string[] memory data,
+    //     FieldType[] memory fieldType
+    // ) internal view returns (bytes32 roothash) {
+    //     bytes32[] memory leaves = new bytes32[](fieldType.length);
+    //     for (uint i = 0; i < fieldType.length; i++) {
+    //         if (
+    //             fieldType[i] == FieldType.BOOL &&
+    //             (keccak256(abi.encodePacked(data[i])) ==
+    //                 keccak256(abi.encodePacked("true")) ||
+    //                 keccak256(abi.encodePacked(data[i])) ==
+    //                 keccak256(abi.encodePacked("false")))
+    //         ) {
+    //             leaves[i] = keccak256(
+    //                 abi.encodePacked(
+    //                     keccak256(abi.encodePacked(data[i])) ==
+    //                         keccak256(abi.encodePacked("true"))
+    //                 )
+    //             );
+    //         }
+
+    //         // need to fix
+    //         if (fieldType[i] == FieldType.STRING) {
+    //             console.logBytes(abi.encodePacked(encodeString(data[i])));
+    //             bytes32 res = keccak256(abi.encodePacked(encodeString(data[i])));
+    //             leaves[i] = keccak256(abi.encodePacked(res));
+    //             console.logBytes32(keccak256(abi.encodePacked(res)));
+    //         }
+
+    //         // todo, add range limit
+    //         if (
+    //             fieldType[i] == FieldType.UINT ||
+    //             fieldType[i] == FieldType.UINT8 ||
+    //             fieldType[i] == FieldType.UINT16 ||
+    //             fieldType[i] == FieldType.UINT32 ||
+    //             fieldType[i] == FieldType.UINT64 ||
+    //             fieldType[i] == FieldType.UINT128 ||
+    //             fieldType[i] == FieldType.UINT256
+    //         ) {
+    //             uint256 convertedNumber;
+    //             bool isConvertSuccess;
+    //             (convertedNumber, isConvertSuccess) = _strToUint(data[i]);
+    //             console.log(convertedNumber);
+    //             console.logBytes(abi.encodePacked(bytes1(0x86),uint256ToBytes(convertedNumber)));
+    //             bytes32 res = keccak256(abi.encodePacked(bytes1(0x86),uint256ToBytes(convertedNumber)));
+    //             console.logBytes32(res);
+
+    //             leaves[i] = keccak256(abi.encodePacked(res));
+    //             console.logBytes32(keccak256(abi.encodePacked(res)));
+    //         }
+
+    //         // todo, add range limit
+    //         if (
+    //             fieldType[i] == FieldType.INT ||
+    //             fieldType[i] == FieldType.INT8 ||
+    //             fieldType[i] == FieldType.INT16 ||
+    //             fieldType[i] == FieldType.INT32 ||
+    //             fieldType[i] == FieldType.INT64 ||
+    //             fieldType[i] == FieldType.INT128 ||
+    //             fieldType[i] == FieldType.INT256
+    //         ) {
+    //             int convertedNumber;
+    //             convertedNumber = _stringToInteger(data[i]);
+    //             leaves[i] = keccak256(abi.encodePacked(convertedNumber));
+    //         }
+    //     }
+    //     roothash = _computeRootHash(leaves);
+    // }
 
     /**
      * @dev verify the digest of the Credential
@@ -155,36 +202,32 @@ library libCredential {
         Credential memory credential
     ) public pure returns (bool) {
         bytes32 ethSignedMessageHash;
-        if (credential.sigDetail.isEip191 == false) {
-            ethSignedMessageHash = credential.digest;
+        if (credential.version == 0x0001) {
+            bytes memory versionedDigest = abi.encodePacked(
+                credential.version,
+                credential.digest
+            );
+            ethSignedMessageHash = keccak256(
+                abi.encodePacked(
+                    bytes1(0x19),
+                    EIP191_VERSION_E_HEADER,
+                    EIP191_CRE_VERSION_DIGEST_LEN_V1,
+                    EIP191_CRE_VERSION_DIGEST_PREFIX,
+                    versionedDigest
+                )
+            );
         } else {
-            if (credential.version == 0x0001) {
-                bytes memory versionedDigest = abi.encodePacked(
-                    credential.version,
+            ethSignedMessageHash = keccak256(
+                abi.encodePacked(
+                    bytes1(0x19),
+                    EIP191_VERSION_E_HEADER,
+                    EIP191_CRE_DIGEST_LEN_V0,
                     credential.digest
-                );
-                ethSignedMessageHash = keccak256(
-                    abi.encodePacked(
-                        bytes1(0x19),
-                        EIP191_VERSION_E_HEADER,
-                        EIP191_CRE_VERSION_DIGEST_LEN_V1,
-                        EIP191_CRE_VERSION_DIGEST_PREFIX,
-                        versionedDigest
-                    )
-                );
-            } else {
-                ethSignedMessageHash = keccak256(
-                    abi.encodePacked(
-                        bytes1(0x19),
-                        EIP191_VERSION_E_HEADER,
-                        EIP191_CRE_DIGEST_LEN_V0,
-                        credential.digest
-                    )
-                );
-            }
+                )
+            );
         }
         return
-            _recover(ethSignedMessageHash, credential.sigDetail.signature) ==
+            _recover(ethSignedMessageHash, credential.signature) ==
             credential.attester;
     }
 
@@ -230,19 +273,72 @@ library libCredential {
         }
     }
 
+    function encodeString(
+        string memory str
+    ) public pure returns (bytes memory) {
+        bytes memory strBytes = bytes(str);
+        if (strBytes.length == 0) {
+            return hex"80"; // empty string
+        }
+        if (strBytes.length == 1 && uint8(strBytes[0]) < 128) {
+            return strBytes; // single byte string
+        }
+        return abi.encodePacked(encodeLength(strBytes.length, 128), strBytes);
+    }
+
+    function encodeLength(
+        uint256 len,
+        uint256 offset
+    ) private pure returns (bytes memory) {
+        if (len < 56) {
+            return abi.encodePacked(uint8(len + offset));
+        } else {
+            uint256 lenLen = calculateLenLen(len);
+            bytes memory prefix = abi.encodePacked(uint8(lenLen + offset + 55));
+            bytes memory lenBytes = toBytes(len, lenLen);
+            return abi.encodePacked(prefix, lenBytes);
+        }
+    }
+
+    function calculateLenLen(uint256 len) private pure returns (uint256) {
+        uint256 lenLen = 0;
+        while (len > 0) {
+            lenLen++;
+            len /= 256;
+        }
+        return lenLen;
+    }
+
+    function toBytes(
+        uint256 x,
+        uint256 len
+    ) private pure returns (bytes memory) {
+        bytes memory b = new bytes(len);
+        for (uint256 i = 0; i < len; i++) {
+            b[i] = bytes1(uint8(x / (2 ** (8 * (len - 1 - i)))));
+        }
+        return b;
+    }
+
     /**
      * @dev convert string to uint
      * @param _str, the string to be convert
      */
-    function _strToUint(string memory _str) internal pure returns(uint256 res, bool err) {
-        
+    function _strToUint(
+        string memory _str
+    ) internal pure returns (uint256 res, bool err) {
         for (uint256 i = 0; i < bytes(_str).length; i++) {
-            if ((uint8(bytes(_str)[i]) - 48) < 0 || (uint8(bytes(_str)[i]) - 48) > 9) {
+            if (
+                (uint8(bytes(_str)[i]) - 48) < 0 ||
+                (uint8(bytes(_str)[i]) - 48) > 9
+            ) {
                 return (0, false);
             }
-            res += (uint8(bytes(_str)[i]) - 48) * 10**(bytes(_str).length - i - 1);
+            res +=
+                (uint8(bytes(_str)[i]) - 48) *
+                10 ** (bytes(_str).length - i - 1);
         }
-        
+
         return (res, true);
     }
 
@@ -250,7 +346,9 @@ library libCredential {
      * @dev convert string to int
      * @param _value, the string to be convert
      */
-    function _stringToInteger(string memory _value) internal pure returns (int) {
+    function _stringToInteger(
+        string memory _value
+    ) internal pure returns (int) {
         bytes memory _bytesValue = bytes(_value);
         int256 _intValue = 0;
         bool _isNegative = false;
@@ -274,26 +372,68 @@ library libCredential {
         return _intValue;
     }
 
+    function _computeRootHash(
+        bytes32[] memory leaves
+    ) public pure returns (bytes32) {
+        require(leaves.length > 0, "Merkle tree must have at least one leaf");
+
+        if (leaves.length == 1) {
+            return leaves[0];
+        }
+
+        uint256 nodes = leaves.length;
+        bytes32[] memory levels = new bytes32[](leaves.length);
+
+        // Copy the leaves into the lowest level of the tree
+        for (uint256 i = 0; i < nodes; i++) {
+            levels[i] = leaves[i];
+        }
+
+        // Repeatedly hash pairs of nodes until there is only one node left
+        for (
+            uint256 levelSize = nodes;
+            levelSize > 1;
+            levelSize = (levelSize + 1) / 2
+        ) {
+            for (uint256 i = 0; i < levelSize; i += 2) {
+                uint256 j = i / 2;
+                if (i == levelSize - 1) {
+                    levels[j] = levels[i];
+                } else {
+                    levels[j] = hashPair(levels[i], levels[i + 1]);
+                }
+            }
+        }
+        return levels[0];
+    }
+
+    function hashPair(bytes32 a, bytes32 b) private pure returns (bytes32) {
+        return keccak256(abi.encodePacked(a, b));
+    }
 
     /**
-     * @dev computeRoothash
-     * @param leaves, the leaves to be computed
+     * @dev convert uint256 to bytes(with unfixed length), designed for timestamp when calculate
+     * @param value, the uint256 to be convert
      */
-    function _computeRootHash(bytes32[] memory leaves) internal pure returns (bytes32) {
-        require(leaves.length > 0, "Leaves array should not be empty");
-
-        uint256 n = leaves.length;
-        bytes32[] memory nodes = new bytes32[](n * 2); 
-
-        for (uint256 i = 0; i < n; i++) {
-            nodes[n + i] = leaves[i];
+    function uint256ToBytes(
+        uint256 value
+    ) internal pure returns (bytes memory) {
+        if (value == 0) {
+            return abi.encodePacked(bytes1(0));
         }
-
-        for (uint256 i = n - 1; i > 0; i--) {
-            nodes[i] = keccak256(abi.encodePacked(nodes[i * 2], nodes[i * 2 + 1]));
+        uint256 temp = value;
+        uint256 bytesLength = 0;
+        while (temp > 0) {
+            bytesLength++;
+            temp >>= 8;
         }
-
-        return nodes[1]; 
+        bytes memory result = new bytes(bytesLength);
+        temp = value;
+        for (uint256 i = bytesLength; i > 0; i--) {
+            result[i - 1] = bytes1(uint8(temp & 0xff));
+            temp >>= 8;
+        }
+        return result;
     }
 
     /**
@@ -301,7 +441,7 @@ library libCredential {
      * @param num, the uint64 to be convert
      */
     function _uint64ToBytes(uint64 num) public pure returns (bytes memory) {
-        if (num == 0){
+        if (num == 0) {
             bytes memory res = new bytes(1);
             return res;
         }
@@ -320,7 +460,9 @@ library libCredential {
 
     function _toBytes(uint256 x) internal pure returns (bytes memory) {
         bytes memory b = new bytes(32);
-        assembly { mstore(add(b, 32), x) }
+        assembly {
+            mstore(add(b, 32), x)
+        }
         return b;
     }
 
