@@ -4,16 +4,17 @@ pragma solidity ^0.8.9;
 
 import {libCredential} from "./library/libCredential.sol";
 import {libAttestation} from "./library/libAttestation.sol";
-import {libRevocation} from "./library/libRevocation.sol";
 import {ICTypeRegistry, CTypeRecord} from "./ICTypeRegistry.sol";
 import {IConverter} from "./IConverter.sol";
+import {EIP712Verifier} from "./EIP712Verifier.sol";
+import {RevocationWithSig, MultiRevocationWithSig} from "./Types.sol";
 
 /**
  * @title Converter
  * @dev used to convert Credential to Attestation on-chain. The contract will do the verification job.
  */
 
-contract Converter is IConverter {
+contract Converter is IConverter, EIP712Verifier {
     // checking the attestation details via its digest
     mapping(bytes32 => libAttestation.Attestation) private _db;
 
@@ -104,12 +105,13 @@ contract Converter is IConverter {
      * @inheritdoc IConverter
      */
     function revokeWithSig(
-        libRevocation.RevocationWithSig[] memory revocationWithSigList
+        RevocationWithSig[] memory revocationWithSigList
     ) external returns (uint64) {
         for (uint256 i = 0; i < revocationWithSigList.length; ) {
-            libRevocation.RevocationWithSig
-                memory currentRevocation = revocationWithSigList[i];
-            if (libRevocation.verifySignature(currentRevocation) == false) {
+            RevocationWithSig memory currentRevocation = revocationWithSigList[
+                i
+            ];
+            if (_verifyRevoke(currentRevocation) == false) {
                 revert RevokeWithInvalidSig();
             }
             _revokeDB[currentRevocation.digest][
@@ -123,14 +125,12 @@ contract Converter is IConverter {
      * @inheritdoc IConverter
      */
     function multiRevokeWithSig(
-        libRevocation.MultiRevocationWithSig[] memory multiRevocationWithSigList
+        MultiRevocationWithSig[] memory multiRevocationWithSigList
     ) external returns (uint64) {
         for (uint256 i = 0; i < multiRevocationWithSigList.length; ) {
-            libRevocation.MultiRevocationWithSig
+            MultiRevocationWithSig
                 memory currentRevocation = multiRevocationWithSigList[i];
-            if (
-                libRevocation.verifyMultiSignature(currentRevocation) == false
-            ) {
+            if (_verifyMultiRevoke(currentRevocation) == false) {
                 revert RevokeWithInvalidSig();
             }
 

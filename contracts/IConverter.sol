@@ -3,8 +3,8 @@
 pragma solidity ^0.8.9;
 import {libCredential} from "./library/libCredential.sol";
 import {libAttestation} from "./library/libAttestation.sol";
-import {libRevocation} from "./library/libRevocation.sol";
 import {ICTypeRegistry} from "./ICTypeRegistry.sol";
+import { RevocationWithSig, MultiRevocationWithSig } from "./Types.sol";
 
 /**
  * @title Converter - The contract used to convert a valid Credential to Attestation on-chain.
@@ -89,7 +89,7 @@ interface IConverter {
 
      */
     function revokeWithSig(
-        libRevocation.RevocationWithSig[] memory revocationWithSigList
+        RevocationWithSig[] memory revocationWithSigList
     ) external returns (uint64);
 
     /**
@@ -100,7 +100,7 @@ interface IConverter {
 
      */
     function multiRevokeWithSig(
-        libRevocation.MultiRevocationWithSig[] memory multiRevocationWithSigList
+        MultiRevocationWithSig[] memory multiRevocationWithSigList
     ) external returns (uint64);
 
     /**

@@ -4,9 +4,6 @@ async function main() {
   const libCredential = await ethers.getContractFactory("libCredential");
   const libCredentialObj = await libCredential.deploy();
 
-  const libRevocation = await ethers.getContractFactory("libRevocation");
-  const libRevocationObj = await libRevocation.deploy();
-
   const libAttestation = await ethers.getContractFactory("libAttestation", { libraries: { libCredential: libCredentialObj.address } });
   const libAttestationObj = await libAttestation.deploy();
 
@@ -17,7 +14,6 @@ async function main() {
     libraries: {
       libCredential: libCredentialObj.address,
       libAttestation: libAttestationObj.address,
-      libRevocation: libRevocationObj.address,
     }
   }
 

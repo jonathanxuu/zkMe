@@ -6,7 +6,6 @@ describe("Converter", function () {
   let Converter, converter: Contract;
   let libCredential, libCredentialObj;
   let libAttestation, libAttestationObj;
-  let libRevocation, libRevocationObj;
   let ctypeRegistry, ctypeRegistryObj: Contract;
   const FieldType = {
     BOOL: 0,
@@ -34,10 +33,6 @@ describe("Converter", function () {
     libCredentialObj = await libCredential.deploy();
     await libCredentialObj.deployed();
 
-    libRevocation = await ethers.getContractFactory("libRevocation");
-    libRevocationObj = await libRevocation.deploy();
-    await libRevocationObj.deployed();
-
     libAttestation = await ethers.getContractFactory("libAttestation");
     libAttestationObj = await libAttestation.deploy();
     await libAttestationObj.deployed();
@@ -50,7 +45,6 @@ describe("Converter", function () {
       libraries: {
         libCredential: libCredentialObj.address,
         libAttestation: libAttestationObj.address,
-        libRevocation: libRevocationObj.address,
       }
     });
     converter = await Converter.deploy(ctypeRegistryObj.address);
