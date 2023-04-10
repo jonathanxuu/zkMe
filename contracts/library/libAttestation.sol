@@ -5,12 +5,12 @@ import {libCredential} from "./libCredential.sol";
 
 // this library defines the struct and the functions of an attestation
 library libAttestation {
+
     struct Attestation {
         bytes2 version;
         bytes32 ctype;
         bytes32 digest;
-        // string[] data;
-        bytes[] data;
+        bytes data;
         address claimer;
         address attester;
         uint64 issuanceDate;
@@ -24,6 +24,7 @@ library libAttestation {
     function fillAttestation(
         libCredential.Credential memory credential
     ) public pure returns (Attestation memory attestation) {
+
         attestation.version = credential.version;
         attestation.ctype = credential.ctype;
         attestation.digest = credential.digest;

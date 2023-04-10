@@ -1,61 +1,42 @@
 // SPDX-License-Identifier: GPL-3.0
 
 pragma solidity ^0.8.9;
-import {ICTypeRegistry, CTypeRecord} from "./ICTypeRegistry.sol";
+import {ICTypeRegistry} from "./ICTypeRegistry.sol";
+import {ICTypeResolver} from "./ICTypeResolver.sol";
 
 /**
  * @title The global CType registry.
  */
 contract CTypeRegistry is ICTypeRegistry {
     error AlreadyExists();
-    error CTypeRecordNotValid();
+    error ResolverNotValid();
 
-    // The global mapping between CTypeHash and Register and the CTypeRecord
-    mapping(bytes32 => mapping(address => CTypeRecord)) private _registry;
+    // The global mapping between CTypeHash and Register and the Resolver Contract
+    mapping(bytes32 => mapping(address => ICTypeResolver)) private _registry;
 
     /**
      * @inheritdoc ICTypeRegistry
      */
     function register(
-        CTypeRecord memory ctypeRecord,
-        bytes32 ctypeHash
+        bytes32 ctypeHash,
+        ICTypeResolver CTypeResolver
     ) external {
-        if (_checkCTypeRecord(ctypeRecord) == false) {
-            revert CTypeRecordNotValid();
-        }
-
-        if (_registry[ctypeHash][msg.sender].fieldData.length != 0) {
+        if (address(_registry[ctypeHash][msg.sender]) != address(0)) {
             revert AlreadyExists();
         }
 
-        _registry[ctypeHash][msg.sender] = ctypeRecord;
+        _registry[ctypeHash][msg.sender] = CTypeResolver;
 
-        emit Registered(ctypeHash, msg.sender);
+        emit Registered(ctypeHash, msg.sender, CTypeResolver);
     }
 
     /**
      * @inheritdoc ICTypeRegistry
      */
-    function getCType(
+    function getResolver(
         bytes32 ctypeHash,
         address registerer
-    ) external view returns (CTypeRecord memory) {
+    ) external view returns (ICTypeResolver CTypeResolver) {
         return _registry[ctypeHash][registerer];
-    }
-
-    /**
-     * @dev Check whether the CTypeRecord is a valid one.
-     *
-     * @param ctypeRecord The CTypeRecord of the CType.
-     *
-     * @return The checking result.
-     */
-    function _checkCTypeRecord(
-        CTypeRecord memory ctypeRecord
-    ) private pure returns (bool) {
-        if (ctypeRecord.fieldData.length == ctypeRecord.fieldType.length) {
-            return true;
-        }
-        return false;
     }
 }

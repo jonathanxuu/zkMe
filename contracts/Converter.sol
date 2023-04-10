@@ -4,10 +4,11 @@ pragma solidity ^0.8.9;
 
 import {libCredential} from "./library/libCredential.sol";
 import {libAttestation} from "./library/libAttestation.sol";
-import {ICTypeRegistry, CTypeRecord} from "./ICTypeRegistry.sol";
+import {ICTypeRegistry} from "./ICTypeRegistry.sol";
 import {IConverter} from "./IConverter.sol";
 import {EIP712Verifier} from "./EIP712Verifier.sol";
 import {RevocationWithSig, MultiRevocationWithSig} from "./Types.sol";
+import {ICTypeResolver} from "./ICTypeResolver.sol";
 
 /**
  * @title Converter
@@ -34,7 +35,7 @@ contract Converter is IConverter, EIP712Verifier {
     error RevokeWithInvalidSig();
     error InvalidRegistry();
     error CTypeNotExist();
-
+    error StoreOnResolverFailed();
     /**
      * @dev The constructor function of the Converter Contract.
      *
@@ -195,19 +196,17 @@ contract Converter is IConverter, EIP712Verifier {
             revert AlreadyRevoked();
         }
 
-        CTypeRecord memory ctypeRecord = _ctypeRegistry.getCType(
+        ICTypeResolver CTypeResolver = _ctypeRegistry.getResolver(
             credential.ctype,
             credential.attester
         );
-
-        if (ctypeRecord.fieldData.length == 0) {
-            revert CTypeNotExist();
-        }
-
-        if (libCredential.verifyRootHash(credential, ctypeRecord) == false) {
+        // if the data is empty this is a Private VC
+        if (credential.data.length != 0){
+            if (credential.roothash != CTypeResolver.computeRootHash(credential.data)) {
             revert RoothashInvalid();
+            }
         }
-
+        CTypeResolver.store(credential.data, credential.digest);
         libAttestation.Attestation memory attestation = libAttestation
             .fillAttestation(credential);
         _db[attestation.digest] = attestation;
